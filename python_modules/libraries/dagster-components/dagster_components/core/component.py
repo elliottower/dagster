@@ -14,6 +14,7 @@ from typing import (
     ClassVar,
     Dict,
     Iterable,
+    List,
     Mapping,
     Optional,
     Sequence,
@@ -206,12 +207,29 @@ def get_registered_components_in_module(module: ModuleType) -> Iterable[Type[Com
 T = TypeVar("T")
 
 
+@record
+class ComponentInstanceKey:
+    parts: List[str]
+
+    @staticmethod
+    def root() -> "ComponentInstanceKey":
+        return ComponentInstanceKey(parts=[])
+
+    def child(self, part: str) -> "ComponentInstanceKey":
+        return ComponentInstanceKey(parts=self.parts + [part])
+
+    @property
+    def dot_path(self) -> str:
+        return ".".join(self.parts)
+
+
 @dataclass
 class ComponentLoadContext:
     resources: Mapping[str, object]
     registry: ComponentRegistry
     decl_node: Optional[ComponentDeclNode]
     templated_value_resolver: TemplatedValueResolver
+    code_location_name: str
 
     @staticmethod
     def for_test(
@@ -219,12 +237,14 @@ class ComponentLoadContext:
         resources: Optional[Mapping[str, object]] = None,
         registry: Optional[ComponentRegistry] = None,
         decl_node: Optional[ComponentDeclNode] = None,
+        code_location_name: Optional[str] = None,
     ) -> "ComponentLoadContext":
         return ComponentLoadContext(
             resources=resources or {},
             registry=registry or ComponentRegistry.empty(),
             decl_node=decl_node,
             templated_value_resolver=TemplatedValueResolver.default(),
+            code_location_name=code_location_name or "test",
         )
 
     @property
@@ -235,6 +255,24 @@ class ComponentLoadContext:
             check.failed(f"Unsupported decl_node type {type(self.decl_node)}")
 
         return self.decl_node.path
+
+    @property
+    def component_instance_key(self) -> ComponentInstanceKey:
+        from dagster_components.core.component_decl_builder import YamlComponentDecl
+
+        if not isinstance(self.decl_node, YamlComponentDecl):
+            check.failed(f"Unsupported decl_node type {type(self.decl_node)}")
+
+        return self.decl_node.key
+
+    @property
+    def component_type(self) -> str:
+        from dagster_components.core.component_decl_builder import YamlComponentDecl
+
+        if not isinstance(self.decl_node, YamlComponentDecl):
+            check.failed(f"Unsupported decl_node type {type(self.decl_node)}")
+
+        return self.decl_node.component_file_model.type
 
     def with_rendering_scope(self, rendering_scope: Mapping[str, Any]) -> "ComponentLoadContext":
         return dataclasses.replace(
@@ -258,6 +296,14 @@ class ComponentLoadContext:
                 self.templated_value_resolver, self._raw_params(), params_schema
             )
             return TypeAdapter(params_schema).validate_python(preprocessed_params)
+
+
+def get_python_module_name(context: ComponentLoadContext, subkey: str) -> str:
+    return (
+        f"__dagster_code_location__.{context.code_location_name}."
+        f"__component_instance__.{context.component_instance_key.dot_path}."
+        f"__{context.component_type}__.{subkey}"
+    )
 
 
 COMPONENT_REGISTRY_KEY_ATTR = "__dagster_component_registry_key"

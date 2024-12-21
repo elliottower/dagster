@@ -94,7 +94,10 @@ def test_load_from_path() -> None:
 
 def test_load_from_location_path() -> None:
     defs = build_defs_from_component_path(
-        LOCATION_PATH / "components" / "scripts", script_load_context().registry, {}
+        path=LOCATION_PATH / "components" / "scripts",
+        registry=script_load_context().registry,
+        resources={},
+        code_location_name="test",
     )
     assert defs.get_asset_graph().get_all_asset_keys() == {
         AssetKey("a"),
