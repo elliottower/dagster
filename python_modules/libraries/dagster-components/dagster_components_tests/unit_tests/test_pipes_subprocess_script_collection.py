@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from dagster import AssetKey
+from dagster_components.core.component import ComponentInstanceKey
 from dagster_components.core.component_decl_builder import ComponentFileModel
 from dagster_components.core.component_defs_builder import (
     YamlComponentDecl,
@@ -49,6 +50,7 @@ def test_python_params() -> None:
                 ]
             },
         ),
+        key=ComponentInstanceKey(parts=["scripts"]),
     )
     component = PipesSubprocessScriptCollection.load(context=script_load_context(component_decl))
     assert get_asset_keys(component) == {
