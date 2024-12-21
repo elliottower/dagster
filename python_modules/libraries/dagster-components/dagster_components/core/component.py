@@ -7,9 +7,11 @@ import sys
 import textwrap
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
+from functools import cached_property
 from pathlib import Path
 from types import ModuleType
 from typing import (
+    TYPE_CHECKING,
     Any,
     ClassVar,
     Dict,
@@ -33,6 +35,9 @@ from pydantic import TypeAdapter
 from typing_extensions import Self
 
 from dagster_components.core.component_rendering import TemplatedValueResolver, preprocess_value
+
+if TYPE_CHECKING:
+    from dagster_components.core.component_decl_builder import YamlComponentDecl
 
 
 class ComponentDeclNode: ...
@@ -209,6 +214,10 @@ T = TypeVar("T")
 
 @record
 class ComponentInstanceKey:
+    """Uniquely identifies a component instance within a component hierarchy. Parts
+    typically correspond to the folder structure of the component hierarchy.
+    """
+
     parts: List[str]
 
     @staticmethod
@@ -247,32 +256,25 @@ class ComponentLoadContext:
             code_location_name=code_location_name or "test",
         )
 
-    @property
-    def path(self) -> Path:
+    @cached_property
+    def yaml_decl_node(self) -> "YamlComponentDecl":
         from dagster_components.core.component_decl_builder import YamlComponentDecl
 
         if not isinstance(self.decl_node, YamlComponentDecl):
             check.failed(f"Unsupported decl_node type {type(self.decl_node)}")
+        return self.decl_node
 
-        return self.decl_node.path
+    @property
+    def path(self) -> Path:
+        return self.yaml_decl_node.path
 
     @property
     def component_instance_key(self) -> ComponentInstanceKey:
-        from dagster_components.core.component_decl_builder import YamlComponentDecl
-
-        if not isinstance(self.decl_node, YamlComponentDecl):
-            check.failed(f"Unsupported decl_node type {type(self.decl_node)}")
-
-        return self.decl_node.key
+        return self.yaml_decl_node.key
 
     @property
     def component_type(self) -> str:
-        from dagster_components.core.component_decl_builder import YamlComponentDecl
-
-        if not isinstance(self.decl_node, YamlComponentDecl):
-            check.failed(f"Unsupported decl_node type {type(self.decl_node)}")
-
-        return self.decl_node.component_file_model.type
+        return self.yaml_decl_node.component_file_model.type
 
     def with_rendering_scope(self, rendering_scope: Mapping[str, Any]) -> "ComponentLoadContext":
         return dataclasses.replace(
@@ -299,6 +301,9 @@ class ComponentLoadContext:
 
 
 def get_python_module_name(context: ComponentLoadContext, subkey: str) -> str:
+    """Utility function to generate a unique name for a Python module that is being dynamically
+    loaded for a particular component instance.
+    """
     return (
         f"__dagster_code_location__.{context.code_location_name}."
         f"__component_instance__.{context.component_instance_key.dot_path}."
